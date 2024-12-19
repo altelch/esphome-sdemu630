@@ -1,0 +1,180 @@
+esphome:
+  name: 'sdemu630'
+  platform: ESP32
+  board: wt32-eth01
+
+#wifi:
+#  ssid: !secret wifi_ssid
+#  password: !secret wifi_password
+
+ethernet:
+   type: LAN8720
+   mdc_pin: GPIO23
+   mdio_pin: GPIO18
+   clk_mode: GPIO0_IN
+   phy_addr: 1
+   power_pin: GPIO16
+
+network:
+  enable_ipv6: true
+  min_ipv6_addr_count: 0
+
+web_server:
+  port: 80
+  version: 3
+  local: true
+
+# Enable logging
+logger:
+  level: ERROR
+  baud_rate: 0
+
+# logs:
+#   component: ERROR
+
+# Enable Home Assistant API
+# api:
+
+ota:
+  platform: esphome
+
+uart:
+#  - id: uart_modbus_master # HW UART 0
+#    tx_pin:  1 
+#    rx_pin:  3
+#    baud_rate: 9600
+#    stop_bits: 1
+#    data_bits: 8
+#    parity: NONE
+#    debug:
+#      direction: BOTH
+  - id: uart_modbus_slave  # HW UART 2
+    tx_pin: 17
+    rx_pin:  5
+    baud_rate: 9600
+    stop_bits: 1
+    data_bits: 8
+    parity: NONE
+    debug:
+      direction: BOTH
+
+modbus:
+  - uart_id: uart_modbus_slave
+    id: modbus_slave
+    send_wait_time: 125ms
+    disable_crc: false
+    role: server
+
+modbus_controller:
+  - modbus_id: modbus_slave
+    address: 1
+    server_registers:
+      - address: 12 
+        value_type: FP32
+        read_lambda: |-
+          return id(power_l1).state;
+      - address: 14 
+        value_type: FP32
+        read_lambda: |-
+          return id(power_l2).state;
+      - address: 16 
+        value_type: FP32
+        read_lambda: |-
+          return id(power_l3).state;
+      - address: 72 
+        value_type: FP32
+        read_lambda: |-
+          return id(energy_import).state;
+      - address: 74 
+        value_type: FP32
+        read_lambda: |-
+          return id(energy_export).state;
+
+mqtt:
+  broker: !secret mqtt_broker
+  port:   1883
+
+  on_json_message:
+    topic: !secret tstatus
+    then:
+      - lambda: |-
+          if (x.containsKey("a_act_power")){                            // EM:0
+            id(power_l1).publish_state(x["a_act_power"]);
+            id(power_l2).publish_state(x["b_act_power"]);
+            id(power_l3).publish_state(x["c_act_power"]); }
+          if (x.containsKey("total_act")){                              // EMdata:0
+            id(energy_import).publish_state(x["total_act"]);
+            id(energy_export).publish_state(x["total_act_return"]); }
+
+sensor:
+  - platform: template
+    name: "Power A"
+    id: power_l1
+    device_class: POWER
+    state_class: measurement
+    accuracy_decimals: 1
+    unit_of_measurement: "W"
+    icon: "mdi:home-lightning-bolt"
+    expire_after: 60s
+    filters:
+      - offset: !lambda return id(power_offset).state/3.0;
+      - timeout:
+          timeout: 60s
+          value: !lambda return 0;
+  - platform: template
+    name: "Power B"
+    id: power_l2
+    device_class: POWER
+    state_class: measurement
+    accuracy_decimals: 1
+    unit_of_measurement: "W"
+    icon: "mdi:home-lightning-bolt"
+    expire_after: 60s
+    filters:
+      - offset: !lambda return id(power_offset).state/3.0;
+      - timeout:
+          timeout: 60s
+          value: !lambda return 0;
+  - platform: template
+    name: "Power C"
+    id: power_l3
+    device_class: POWER
+    state_class: measurement
+    accuracy_decimals: 1
+    unit_of_measurement: "W"
+    icon: "mdi:home-lightning-bolt"
+    expire_after: 60s
+    filters:
+      - offset: !lambda return id(power_offset).state/3.0;
+      - timeout:
+          timeout: 60s
+          value: !lambda return 0;
+  - platform: template
+    name: "Energy import"
+    id: energy_import
+    device_class: ENERGY
+    state_class: total_increasing
+    accuracy_decimals: 2
+    unit_of_measurement: "Wh"
+    icon: "mdi:transmission-tower-import"
+  - platform: template
+    name: "Energy export"
+    id: energy_export 
+    device_class: ENERGY
+    state_class: total_increasing
+    accuracy_decimals: 2
+    unit_of_measurement: "Wh"
+    icon: "mdi:transmission-tower-export"
+
+number:
+  - platform: template
+    id: power_offset
+    name: "Power Offset"
+    optimistic: true
+    min_value: -100
+    max_value:  100
+    initial_value: 0
+    step: 1
+    restore_value: true
+    unit_of_measurement: "W"
+    icon: "mdi:home-lightning-bolt"
