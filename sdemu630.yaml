@@ -104,7 +104,7 @@ mqtt:
             id(power_l3).publish_state(x["c_act_power"]); }
           if (x.containsKey("total_act")){                              // EMdata:0
             id(energy_import).publish_state(x["total_act"]);
-            id(energy_export).publish_state(x["total_act_return"]); }
+            id(energy_export).publish_state(x["total_act_ret"]); }
 
 sensor:
   - platform: template
